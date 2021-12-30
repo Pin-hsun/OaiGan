@@ -25,6 +25,7 @@ parser.add_argument('--input_nc', type=int, default=3, help='input image channel
 parser.add_argument('--output_nc', type=int, default=3, help='output image channels')
 parser.add_argument('--ngf', type=int, default=64, help='generator filters in first conv layer')
 parser.add_argument('--ndf', type=int, default=64, help='discriminator filters in first conv layer')
+parser.add_argument('--n_attrs', type=int, default=13, help='n_attrs for attgan')
 # Training
 parser.add_argument('-b', dest='batch_size', type=int, default=1, help='training batch size')
 parser.add_argument('--test_batch_size', type=int, default=1, help='testing batch size')
@@ -46,8 +47,8 @@ parser.add_argument('--mode', type=str, default='dummy')
 parser.add_argument('--port', type=str, default='dummy')
 
 # Model-specific Arguments
-from engine.pix2pix import Pix2PixModel
-parser = Pix2PixModel.add_model_specific_args(parser)
+# from engine.pix2pix import Pix2PixModel
+# parser = Pix2PixModel.add_model_specific_args(parser)
 
 # Finalize Arguments
 opt = parser.parse_args()
@@ -67,6 +68,7 @@ test_set = Dataset(os.environ.get('DATASET') + opt.dataset + '/test/', opt, mode
 
 train_loader = DataLoader(dataset=train_set, num_workers=opt.threads, batch_size=opt.batch_size, shuffle=True)
 test_loader = DataLoader(dataset=test_set, num_workers=opt.threads, batch_size=opt.test_batch_size, shuffle=False)
+# print(train_set[0][0].shape)  #torch.Size([3, 224, 224])
 
 #  Model
 if not opt.legacy:
@@ -76,7 +78,7 @@ if not opt.legacy:
     logger = pl_loggers.TensorBoardLogger(os.environ.get('LOGS'))
     net = Pix2PixModel(hparams=opt, train_loader=None,
                        test_loader=None, checkpoints=os.environ.get('CHECKPOINTS'))
-    print(net.hparams)
+    # print(net.hparams)
     trainer = pl.Trainer(gpus=[0],  # distributed_backend='ddp',
                          max_epochs=opt.n_epochs, progress_bar_refresh_rate=20, logger=logger)
     trainer.fit(net, train_loader, test_loader)

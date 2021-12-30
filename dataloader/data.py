@@ -91,7 +91,7 @@ class DatasetFromFolder(data.Dataset):
         self.b_path = join(image_dir, self.opt.direction.split('_')[1])
         self.image = sorted([x.split('/')[-1] for x in glob.glob(self.a_path+'/*')])
         self.resize = opt.resize
-        self.seg_model = torch.load(os.environ.get('model_seg')).cuda()
+        # self.seg_model = torch.load(os.environ.get('model_seg')).cuda()
 
     def __len__(self):
         return len(self.image)

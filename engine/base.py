@@ -66,7 +66,7 @@ class BaseModel(pl.LightningModule):
         # hyperparameters
         hparams = {x: vars(hparams)[x] for x in vars(hparams).keys() if x not in hparams.not_tracking_hparams}
         hparams.pop('not_tracking_hparams', None)
-        self.hparams = hparams
+        # self.hparams = hparams
         self.hparams.update(hparams)
         print(self.hparams)
         self.save_hyperparameters(self.hparams)
@@ -125,7 +125,7 @@ class BaseModel(pl.LightningModule):
         self.classifier = MRPretrained()
         self.CELoss = CrossEntropyLoss()
 
-        self.seg_model = torch.load(os.environ.get('model_seg')).cuda()
+        # self.seg_model = torch.load(os.environ.get('model_seg')).cuda()
 
         [self.optimizer_d, self.optimizer_g], [] = self.configure_optimizers()
         self.net_g_scheduler = get_scheduler(self.optimizer_g, self.hparams)
