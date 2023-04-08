@@ -6,21 +6,6 @@ import matplotlib.pyplot as plt
 import pandas
 import seaborn as sns
 
-
-def print_num_of_parameters(net):
-    model_parameters = filter(lambda p: p.requires_grad, net.parameters())
-    print('Number of parameters: ' + str(sum([np.prod(p.size()) for p in model_parameters])))
-
-
-def norm_01(x):
-    """
-    normalize to 0 - 1
-    """
-    x = x - x.min()
-    x = x / x.max()
-    return x
-
-
 def to_8bit(x):
     if type(x) == torch.Tensor:
         x = (x / x.max() * 255).numpy().astype(np.uint8)
@@ -46,6 +31,19 @@ def imagesc(x, show=True, save=None):
     if save:
         x.save(save)
 
+
+def print_num_of_parameters(net):
+    model_parameters = filter(lambda p: p.requires_grad, net.parameters())
+    print('Number of parameters: ' + str(sum([np.prod(p.size()) for p in model_parameters])))
+
+
+def norm_01(x):
+    """
+    normalize to 0 - 1
+    """
+    x = x - x.min()
+    x = x / x.max()
+    return x
 
 def purge_logs():
     import glob, os

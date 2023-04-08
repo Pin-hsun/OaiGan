@@ -20,14 +20,12 @@ class GAN(BaseModel):
         # First, modify the hyper-parameters if necessary
         # Initialize the networks
         self.net_g, self.net_d = self.set_networks()
-        #self.net_dX = copy.deepcopy(self.net_d)
-        self.classifier = nn.Conv2d(256, 1, 1, stride=1, padding=0).cuda()
-
-        self.net_z = copy.deepcopy(self.net_d)
+        self.net_dX = copy.deepcopy(self.net_d)
+        #self.classifier = nn.Conv2d(256, 2, 1, stride=1, padding=0).cuda()
 
         # update names of the models for optimization
-        self.netg_names = {'net_g': 'net_g', 'net_z': 'net_z', 'classifier': 'classifier'}
-        self.netd_names = {'net_d': 'net_d'}#, 'net_class': 'netDC'}
+        self.netg_names = {'net_g': 'net_g'}
+        self.netd_names = {'net_d': 'net_d', 'net_dX': 'net_dX'}#, 'classifier': 'classifier'}
 
         self.oai = OaiSubjects(self.hparams.dataset)
 
@@ -40,27 +38,34 @@ class GAN(BaseModel):
     @staticmethod
     def add_model_specific_args(parent_parser):
         parser = parent_parser.add_argument_group("LitModel")
-        parser.add_argument("--lbx", dest='lbx', type=float, default=1)
-        parser.add_argument("--dc0", dest='dc0', type=float, default=1)
+        parser.add_argument("--lbx", dest='lbx', type=float, default=0)
+        parser.add_argument("--dc0", dest='dc0', type=float, default=0)
         parser.add_argument("--fix", dest='fix', action='store_true', default=False)
-        parser.add_argument("--lbvgg", dest='lbvgg', type=float, default=1)
+        parser.add_argument("--lbvgg", dest='lbvgg', type=float, default=0)
         return parent_parser
 
     @staticmethod
-    def test_method(net_g, img, a=None):
+    def test_method(net_g, img, args, a=None):
         oriX = img[0]
 
-        print(a)
-        imgXX = net_g(oriX, a=torch.FloatTensor([0]))
-        imgXX = nn.Sigmoid()(imgXX['out0'])  # mask
+        #imgXX, _ = net_g(oriX, a=torch.FloatTensor([0]))
+        #imgXX = nn.Sigmoid()(imgXX)  # mask
 
         imgXY = net_g(oriX, a=torch.FloatTensor([a]))
         imgXY = nn.Sigmoid()(imgXY['out0'])  # mask
 
-        imgXX = combine(imgXX, oriX, method='mul')
-        imgXY = combine(imgXY, oriX, method='mul')
+        imgXX = net_g(oriX, a=0 * torch.FloatTensor([a]))
+        #imgXX = nn.Sigmoid()(imgXX['out0'])  # mask
 
-        return imgXY
+        combinedXY = combine(imgXY, oriX, method='mul')
+
+        imgXX = imgXX['out1']
+        combinedXX = imgXX#combine(imgXX, oriX, method='mul')
+
+        return {'imgXY': imgXY[0, ::].detach().cpu(),
+                'imgXX': imgXX[0, ::].detach().cpu(),
+                'combinedXY': combinedXY[0, ::].detach().cpu(),
+                'combinedXX': combinedXX[0, ::].detach().cpu()}
 
     def generation(self, batch):
         if self.hparams.load3d:  # if working on 3D input, bring the Z dimension to the first and combine with batch
@@ -70,69 +75,64 @@ class GAN(BaseModel):
         self.labels = self.oai.labels_unilateral(filenames=batch['filenames'])
         self.oriX = batch['img'][0]
         self.oriY = batch['img'][1]
+        #self.ori0 = batch['img'][2]
 
         if self.hparams.fix:
             a = torch.ones_like(self.labels['paindiff'])
         else:
             a = torch.abs(self.labels['paindiff'])
 
-        outXa = self.net_g(self.oriX, a=a)
-        self.imgXY = nn.Sigmoid()(outXa['out0'])  # mask
+        outXY = self.net_g(self.oriX, a=a)
+        self.imgXY = nn.Sigmoid()(outXY['out0'])  # mask
         self.imgXY = combine(self.imgXY, self.oriX, method='mul')
 
-        outX0 = self.net_g(self.oriX, a=0 * torch.abs(self.labels['paindiff']))
-        self.imgXX = nn.Sigmoid()(outX0['out0'])  # mask
-        self.imgXX = combine(self.imgXX, self.oriX, method='mul')
-
-        imgXYz = self.net_g(self.imgXY, a=0 * torch.abs(self.labels['paindiff']))['z']
-        oriYz = self.net_g(self.oriY, a=0 * torch.abs(self.labels['paindiff']))['z']
-
-        #self.oriXz = outXa['z']
-        self.imgXYz = imgXYz
-        self.oriYz = oriYz
+        outXX = self.net_g(self.oriX, a=0 * torch.abs(self.labels['paindiff']))
+        #self.imgXX = nn.Sigmoid()(outXX['out0'])  # mask
+        #self.imgXX = combine(self.imgXX, self.oriX, method='mul')
+        self.imgXX = outXX['out1']
 
     def backward_g(self):
         # ADV(XY)+
         axy = self.add_loss_adv(a=self.imgXY, net_d=self.net_d, truth=True)
 
+        # ADV(XX)+
+        axx = self.add_loss_adv(a=self.imgXX, net_d=self.net_dX, truth=True)
+
         # L1(XY, Y)
         loss_l1 = self.add_loss_l1(a=self.imgXY, b=self.oriY)
 
-        # L1(XX, X)
-        loss_l1x = self.add_loss_l1(a=self.imgXX, b=self.oriX)
+        loss_ga = axy * 0.5 + axx * 0.5
 
-        loss_ga = axy# * 0.5 + axx * 0.5
+        loss_g = loss_ga + loss_l1 * self.hparams.lamb
 
-        # Z
-        loss_z = self.MSELoss(self.oriYz, self.imgXYz) * 100000
-
-        # ax: adversarial of x, ay: adversarial of y
-        _, _, _, _, classify_a, classify_b = self.add_loss_adv_classify3d_paired(a=self.oriX, b=self.oriY, net_d=self.net_z,
-                                                           classifier=self.classifier,
-                                                           truth_adv=True, truth_classify=self.labels['painbinary'])
-
-        loss_g = loss_ga + loss_l1 * self.hparams.lamb + loss_l1x * self.hparams.lbx\
-                 + loss_z
+        if self.hparams.lbx > 0:
+            loss_l1x = self.add_loss_l1(a=self.imgXX, b=self.oriX)
+            loss_g += loss_l1x * self.hparams.lbx
 
         if self.hparams.lbvgg > 0:
             loss_gvgg = self.VGGloss(torch.cat([self.imgXY] * 3, 1), torch.cat([self.oriY] * 3, 1))
             loss_g += loss_gvgg * self.hparams.lbvgg
 
-        return {'sum': loss_g, 'l1': loss_l1, 'ga': loss_ga, 'z': loss_z}
+        return {'sum': loss_g, 'l1': loss_l1, 'ga': loss_ga}#, 'gvgg': loss_gvgg}
 
     def backward_d(self):
         # ADV(XY)-
-        axy = self.add_loss_adv(a=self.imgXY, net_d=self.net_d, truth=False)
+        axy = self.add_loss_adv(a=self.imgXY.detach(), net_d=self.net_d, truth=False)
 
         # ADV(XX)-
+        axx = self.add_loss_adv(a=self.imgXX.detach(), net_d=self.net_dX, truth=False)
         #axx, _ = self.add_loss_adv_classify3d(a=self.imgXX, net_d=self.net_dX, truth_adv=False, truth_classify=False)
 
+        ay = self.add_loss_adv(a=self.oriY, net_d=self.net_d, truth=True)
+        ax = self.add_loss_adv(a=self.oriX, net_d=self.net_dX, truth=True)
+
         # ax: adversarial of x, ay: adversarial of y
-        ax, ay, _, _, _, _ = self.add_loss_adv_classify3d_paired(a=self.oriX, b=self.oriY, net_d=self.net_d,
-                                                             classifier=self.classifier,
-                                                             truth_adv=True, truth_classify=self.labels['painbinary'])
+        #_, ay, cxy, _ = self.add_loss_adv_classify3d_paired(a=self.oriX, b=self.oriY, net_d=self.net_d,
+        #                                                     classifier=self.classifier,
+        #                                                     truth_adv=True, truth_classify=self.labels['painbinary'])
+
         # adversarial of xy (-) and y (+)
-        loss_da = axy * 0.5 + ay * 0.5#axy * 0.25 + axx * 0.25 + ax * 0.25 + ay * 0.25
+        loss_da = (axy * 0.5 + ay * 0.5 + ax * 0.5 + axx * 0.5) / 2
         # classify x (+) vs y (-)
         #loss_dc = cxy
         loss_d = loss_da #+ loss_dc * self.hparams.dc0
@@ -150,34 +150,37 @@ class GAN(BaseModel):
             adv_a = self.criterionGAN(adv_a, torch.zeros_like(adv_a))
             adv_b = self.criterionGAN(adv_b, torch.zeros_like(adv_b))
 
-        classify_logits = swap_by_labels(sign_swap=(truth_classify * 2) - 1, classify_logits=(classify_a - classify_b))
+        classify_logits = swap_by_labels(sign_swap=(truth_classify * 2) - 1, classify_logits=(classify_b - classify_a))
 
         classify, classify_logits = classify_easy_3d(classify_logits, truth_classify, classifier, nn.BCEWithLogitsLoss())
 
-        return adv_a, adv_b, classify, classify_logits, classify_a, classify_b
+        return adv_a, adv_b, classify, classify_logits
 
-    def validation_step(self, batch, batch_idx):
+    def validation_stepXXX(self, batch, batch_idx):
         self.generation(batch)
 
-        ax, ay, cxy, lxy, _, _ = self.add_loss_adv_classify3d_paired(a=self.oriX, b=self.oriY, net_d=self.net_d,
+        ax, ay, cxy, lxy = self.add_loss_adv_classify3d_paired(a=self.oriX, b=self.oriY, net_d=self.net_d,
                                                                classifier=self.classifier,
                                                                truth_adv=True, truth_classify=self.labels['painbinary'])
         loss_dc = cxy
         self.log('valdc', loss_dc, on_step=False, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
 
         # STUPID WHY INVERSE?
-        label = 1 - self.labels['painbinary'].type(torch.LongTensor)
-
+        label = self.labels['painbinary'].type(torch.LongTensor)
         out = lxy[:, :, 0, 0]
         self.log_helper.append('label', label)
         self.log_helper.append('out', out.cpu().detach())
         return loss_dc
 
-    def validation_epoch_end(self, x):
+    def validation_epoch_endXXX(self, x):
+        """
+        Called at the end of validation to aggregate outputs
+        """
         auc = GetAUC()(torch.cat(self.log_helper.get('label'), 0), torch.cat(self.log_helper.get('out'), 0))
         self.log_helper.clear('label')
         self.log_helper.clear('out')
         for i in range(len(auc)):
             self.log('auc' + str(i), auc[i], on_step=False, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
 
-#A CUDA_VISIBLE_DEVICES=0,1 python train.py --jsn womac3 --prj 3D/test4ano/0/  --models descar4ano --netG dsnumcrel0a --netD bpatch_16 --split moaks
+# CUDA_VISIBLE_DEVICES=0,1 python train.py --jsn womac3 --prj 3D/test4/  --models descar4 --netG dsmcrel0a --netD bpatch_16 --split moaks
+# CUDA_VISIBLE_DEVICES=0,1,2,3 python train.py --jsn womac3 --prj descar4/L0_100_Vgg10_detach/ --dataset womac4 --models descar4  --netD bpatch_16 --split a  --lbvgg 10 --mc --direction ap_bp --lbx 0 --lamb 100 --env a6k --netG dsmc --fix

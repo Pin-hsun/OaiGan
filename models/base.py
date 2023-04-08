@@ -146,10 +146,11 @@ class BaseModel(pl.LightningModule):
         self.net_d_scheduler = get_scheduler(self.optimizer_d, self.hparams)
 
     def configure_optimizers(self):
-        netg_parameters = []
         print('configure optimizer being called')
         print(self.netg_names.keys())
         print(self.netd_names.keys())
+
+        netg_parameters = []
         for g in self.netg_names.keys():
             netg_parameters = netg_parameters + list(getattr(self, g).parameters())
 
@@ -197,7 +198,7 @@ class BaseModel(pl.LightningModule):
         self.train_loader.dataset.shuffle_images()
 
         # checkpoint
-        if self.epoch % 20 == 0:
+        if self.epoch % 10 == 0:
             for name in self.netg_names.keys():
                 path_g = self.dir_checkpoints + ('/' + self.netg_names[name] + '_model_epoch_{}.pth').format(self.epoch)
                 torch.save(getattr(self, name), path_g)
@@ -235,7 +236,7 @@ class BaseModel(pl.LightningModule):
     def backward_d(self):
         pass
 
-    def set_networks(self):
+    def set_networks(self, net='all'):
         # GENERATOR
         if self.hparams.netG == 'attgan':
             from networks.AttGAN.attgan import Generator
@@ -337,4 +338,10 @@ class BaseModel(pl.LightningModule):
             print('no init netD of sagan')
         else:
             net_d = net_d.apply(_weights_init)
-        return net_g, net_d
+
+        if net == 'all':
+            return net_g, net_d
+        elif net == 'g':
+            return net_g
+        elif net == 'd':
+            return net_d

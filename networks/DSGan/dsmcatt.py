@@ -18,6 +18,8 @@ import torch.nn.functional as F
 from networks.model_utils import get_activation
 import numpy as np
 
+from networks.DSGan.dsmc import Generator as GeneratorOriginal
+
 sig = nn.Sigmoid()
 ACTIVATION = nn.ReLU
 #device = 'cuda'
@@ -75,75 +77,36 @@ def conv2d_block(in_channels, out_channels, kernel=3, stride=1, padding=1, activ
     )
 
 
-class Generator(nn.Module):
+class AttentionBlock(nn.Module):
+    def __init__(self, in_channels):
+        super(AttentionBlock, self).__init__()
+
+        self.conv1 = nn.Conv2d(in_channels, in_channels // 8, kernel_size=1)
+        self.conv2 = nn.Conv2d(in_channels // 8, in_channels, kernel_size=1)
+        self.softmax = nn.Softmax(dim=-2)
+
+    def forward(self, x):
+        x1 = self.conv1(x)
+        x1 = self.conv2(x1)
+        x1 = self.softmax(x1)
+        return x * x1
+
+
+class Generator(GeneratorOriginal):
     def __init__(self, n_channels=1, out_channels=1, nf=32, batch_norm=True, activation=ACTIVATION, final='tanh', mc=False):
-        super(Generator, self).__init__()
+        super(Generator, self).__init__(n_channels, out_channels, nf, batch_norm, activation, final, mc)
 
-        conv_block = conv2d_bn_block if batch_norm else conv2d_block
-
-        max_pool = nn.MaxPool2d(2)
-        act = activation
-
-        if mc:
-            dropout = 0.5
-        else:
-            dropout = 0.0
-
-        self.label_k = torch.tensor([0, 1]).half().cuda()
-        self.c_dim = 0
-
-        self.down0 = nn.Sequential(
-            conv_block(n_channels + self.c_dim, nf, activation=act),
-            conv_block(nf, nf, activation=act)
-        )
-        self.down1 = nn.Sequential(
-            max_pool,
-            conv_block(nf, 2 * nf, activation=act),
-            conv_block(2 * nf, 2 * nf, activation=act),
-        )
-        self.down2 = nn.Sequential(
-            max_pool,
-            conv_block(2 * nf, 4 * nf, activation=act),
-            nn.Dropout(p=dropout, inplace=False),
-            conv_block(4 * nf, 4 * nf, activation=act),
-
-        )
-        self.down3 = nn.Sequential(
-            max_pool,
-            conv_block(4 * nf, 8 * nf, activation=act),
-            nn.Dropout(p=dropout, inplace=False),
-            conv_block(8 * nf, 8 * nf, activation=act),
+        self.attention3 = nn.Sequential(
+            nn.Conv2d(8 * nf, 8 * nf // 8, kernel_size=1),
+            nn.Conv2d(8 * nf // 8, 8 * nf, kernel_size=1),
+            nn.Softmax(dim=-2)
         )
 
-        self.up3 = deconv2d_bn_block(8 * nf, 4 * nf, activation=act)
-
-        self.conv5 = nn.Sequential(
-            conv_block(8 * nf, 4 * nf, activation=act),  # 8
-            nn.Dropout(p=dropout, inplace=False),
-            conv_block(4 * nf, 4 * nf, activation=act),
+        self.attention2 = nn.Sequential(
+            nn.Conv2d(4 * nf, 4 * nf // 8, kernel_size=1),
+            nn.Conv2d(4 * nf // 8, 4 * nf, kernel_size=1),
+            nn.Softmax(dim=-2)
         )
-        self.up2 = deconv2d_bn_block(4 * nf, 2 * nf, activation=act)
-        self.conv6 = nn.Sequential(
-            conv_block(4 * nf, 2 * nf, activation=act),
-            nn.Dropout(p=dropout, inplace=False),
-            conv_block(2 * nf, 2 * nf, activation=act),
-        )
-
-        self.up1 = deconv2d_bn_block(2 * nf, nf, activation=act)
-
-        final_layer = get_activation(final)
-
-        self.conv7_k = nn.Sequential(
-            conv_block(nf, out_channels, activation=final_layer),
-        )
-
-        self.conv7_g = nn.Sequential(
-            conv_block(nf, out_channels, activation=final_layer),
-        )
-
-        #if NoTanh:
-        #    self.conv7_k[-1] = self.conv7_k[-1][:-1]
-        #    self.conv7_g[-1] = self.conv7_g[-1][:-1]
 
     def forward(self, xori, a=None):
         x = 1 * xori
@@ -157,26 +120,30 @@ class Generator(nn.Module):
 
         x0 = self.down0(x)
         x1 = self.down1(x0)
-        x2 = self.down2(x1)   # Dropout
-        x3 = self.down3(x2)   # Dropout
+        x2 = self.down2(x1)  # Dropout
+        x3 = self.down3(x2)  # Dropout
+
+        attn3 = self.attention3(x3)
+        x3_attn = F.interpolate(attn3, size=x3.size()[2:], mode='bilinear', align_corners=False)
+        x3 = x3 * attn3
 
         xu3 = self.up3(x3)
         cat3 = torch.cat([xu3, x2], 1)
-        x5 = self.conv5(cat3)   # Dropout
+        x5 = self.conv5(cat3)  # Dropout
+
+        attn2 = self.attention2(x5)
+        x5_attn = F.interpolate(attn2, size=x5.size()[2:], mode='bilinear', align_corners=False)
+        x5 = x5 * attn2
 
         xu2 = self.up2(x5)
         cat2 = torch.cat([xu2, x1], 1)
-        x6 = self.conv6(cat2)   # Dropout
+        x6 = self.conv6(cat2)  # Dropout
 
         xu1 = self.up1(x6)
-        #cat1 = crop_and_concat(xu1, x0)
-
-        #if self.label_k in c:
         x70 = self.conv7_k(xu1)
-        #else:
         x71 = self.conv7_g(xu1)
 
-        return {'out0': x70, 'out1': x71}
+        return {'out0': x70, 'out1': x71, 'attn3': x3_attn, 'attn2': x5_attn}
 
 
 if __name__ == '__main__':
@@ -184,3 +151,5 @@ if __name__ == '__main__':
     #from torchsummary import summary
     from utils.data_utils import print_num_of_parameters
     print_num_of_parameters(g)
+
+    out = g(torch.randn(1, 3, 256, 256))

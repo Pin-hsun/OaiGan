@@ -157,6 +157,7 @@ def preprocess_tensor(x, normalization='01', duplicate_channels=False):
     return x
 
 
+
 # Command Line Argument
 parser = argparse.ArgumentParser(description='pix2pix-pytorch-implementation')
 parser.add_argument('--env', type=str, default=None, help='environment_to_use')
@@ -173,6 +174,7 @@ parser.add_argument('--netg', type=str)
 parser.add_argument('--resize', type=int)
 parser.add_argument('--cropsize', type=int)
 parser.add_argument('--t2d', action='store_true', dest='t2d', default=False)
+parser.add_argument('--cmb', type=str, default=None, help='way to combine output to the input')
 parser.add_argument('--trd', type=float, dest='trd', help='threshold of images')
 parser.add_argument('--nm', dest='nm')
 parser.set_defaults(n01=False)
@@ -186,9 +188,6 @@ parser.add_argument('--port', type=str, default='dummy')
 parser.add_argument('--item', nargs='+', help='item to print out', type=str, default=[['diff_bone', 'diff_soft']])
 parser.add_argument('--sfx', type=str, dest='suffix', default='', help='suffix of output')
 parser.add_argument('--dest', type=str, dest='destination', default='gan_output', help='suffix of output')
-parser.add_argument('--fix', action='store_true', dest='fix', default=False)
-parser.add_argument('--cmb', action='store_true', dest='cmb', default=False)
-
 
 
 with open('env/jsn/' + parser.parse_args().jsn + '.json', 'rt') as f:
@@ -207,8 +206,6 @@ if len(args.nepochs) == 1:
 if len(args.nalpha) == 1:
     args.nalpha = [args.nalpha[0], args.nalpha[0]+1, 1]
 
-args.destination = 'gan/' + args.prj
-
 root_data = os.environ.get('DATASET') + args.testset
 
 test_unit = TestModel(args=args)
@@ -226,10 +223,7 @@ def concatenate_list_of_dicts(list_of_dicts):
 
 
 if args.all is not None:
-    if len(args.all) == 3:
-        iirange = range(len(test_unit.test_set))[args.all[0]:args.all[1]:args.all[2]]
-    else:
-        iirange = args.all
+    iirange = range(len(test_unit.test_set))[args.all[0]:args.all[1]:args.all[2]]
 else:
     iirange = range(1)
 
@@ -243,8 +237,8 @@ for epoch in range(*args.nepochs):
 
         for alpha in np.linspace(*args.nalpha):
 
-            mc_diff = []
-            mc_combined = []
+            out_mcX = []
+            out_mcY = []
 
             for m in range(args.mc): # Monte Carlo
                 out = list(map(lambda v: test_unit.get_one_output(v, alpha), args.irange))
@@ -252,57 +246,38 @@ for epoch in range(*args.nepochs):
 
                 #[imgX, imgY, output, names] = list(zip(*out_xy))
 
-                # decide to assign combined as XY or XX
-                if args.fix:
-                    if alpha == 0:
-                        print('XX')
-                        out['combined'] = out['combinedXX']
-                    else:
-                        out['combined'] = out['combinedXY']
-                else:
-                    out['combined'] = out['combinedXY']
-
-                # processing the rest
-                out['diff_xy'] = [(x[1] - x[0]) for x in list(zip(out['combined'], out['imgX']))]
+                out['diff_xy'] = [(x[1] - x[0]) for x in list(zip(out['combined'], out['imgXX']))]
                 # segmentation
                 out['imgX_seg'] = [test_unit.tse_segmentation(x[0, ::], t2d=True).unsqueeze(0) for x in out['imgX']]
                 out['combined_seg'] = [test_unit.tse_segmentation(x[0, ::], t2d=True).unsqueeze(0) for x in out['combined']]
                 out['diff_bone'] = [torch.multiply(x, (y == 1) + (y == 3)) for x, y in list(zip(out['diff_xy'], out['imgX_seg']))]
                 out['diff_soft'] = [torch.multiply(x, (y == 0)) for x, y in list(zip(out['diff_xy'], out['imgX_seg']))]
 
-                #mc_diff.append([((1 - x) > 0.7)/1 for x in out['imgXY']])
-                #mc_diff.append([1 - x for x in out['imgXY']])
+                #out_mc.append([((1 - x) > 0.7)/1 for x in out['imgXY']])
+                #out_mc.append([1 - x for x in out['imgXY']])
+                out_mcX.append(out['imgXX'])
+                out_mcY.append(out['combined'])
 
-                mc_diff.append(out['diff_xy'])
-                mc_combined.append(out['combined'])
+            out_mcX = list(zip(*out_mcX))
+            out_mcY = list(zip(*out_mcY))
 
-            mc_diff = list(zip(*mc_diff))
-            mc_combined = list(zip(*mc_combined))
+            out['mean'] = []
+            out['var'] = []
+            out['sig'] = []
 
-            out['mean_diff'] = []
-            out['var_diff'] = []
-            out['sig_diff'] = []
-            out['mean_combined'] = []
-            out['var_combined'] = []
-            out['sig_combined'] = []
-
-            for s in range(len(mc_diff)):
-                mc_diff[s] = torch.cat(mc_diff[s], dim=0)
-                mc_combined[s] = torch.cat(mc_combined[s], dim=0)
-                out['mean_diff'].append(torch.mean(mc_diff[s], dim=0, keepdim=True))
-                out['var_diff'].append(torch.var(mc_diff[s], dim=0, keepdim=True))
-                out['sig_diff'].append(torch.divide(out['mean_diff'][s], torch.sqrt(out['var_diff'][s]) + 0.00))
-                out['mean_combined'].append(torch.mean(mc_combined[s], dim=0, keepdim=True))
-                out['var_combined'].append(torch.var(mc_combined[s], dim=0, keepdim=True))
-                out['sig_combined'].append(torch.divide(out['mean_combined'][s], torch.sqrt(out['var_combined'][s]) + 0.00))
-
+            for s in range(len(out_mcX)):
+                out_mcX[s] = torch.cat(out_mcX[s], dim=0)
+                out_mcY[s] = torch.cat(out_mcY[s], dim=0)
+                out['mean'].append(torch.mean(out_mcX[s]- out_mcY[s], dim=0, keepdim=True))
+                out['var'].append((torch.var(out_mcX[s], dim=0, keepdim=True)) + (torch.var(out_mcY[s], dim=0, keepdim=True)))
+                out['sig'].append(torch.divide(out['mean'][s], torch.sqrt(out['var'][s])))
 
             # print
+            destination = args.destination
             if args.all:
                 for item in args.item:
-                    os.makedirs(os.path.join(root_data, args.destination, item + args.suffix), exist_ok=True)
-                    tiff.imwrite(os.path.join(root_data, args.destination, item + args.suffix,
-                                              out['name'][0][0].split('/')[-1].split('.')[0] + '_' + str(alpha).zfill(3) + '.tif'),
+                    os.makedirs(os.path.join(root_data, destination, item + args.suffix), exist_ok=True)
+                    tiff.imwrite(os.path.join(root_data, destination, item + args.suffix, out['name'][0][0].split('/')[-1]),
                                  out[item][0][0, ::].numpy())
             else:
                 to_show = [out['var']]#[out['imgX'], out['combined_seg'], out['combined'], out['diff_bone'], out['diff_soft'], mc['mean'], mc['var']]
@@ -311,28 +286,12 @@ for epoch in range(*args.nepochs):
 
             if 1:
                 item = 'mc'
-                os.makedirs(os.path.join(root_data, args.destination, item + args.suffix), exist_ok=True)
-                for s in range(len(mc_diff)):
-                    for i in range(mc_diff[s].shape[0]):
-                        tiff.imwrite(os.path.join(root_data, args.destination, item + args.suffix, str(i).zfill(3) +
-                                                 '.tif'), mc_diff[s][i, ::].numpy())
+                os.makedirs(os.path.join(root_data, destination, item + args.suffix), exist_ok=True)
+                for s in range(len(out_mc)):
+                    for i in range(out_mc[s].shape[0]):
+                        tiff.imwrite(os.path.join(root_data, destination, item + args.suffix, str(i).zfill(3) +
+                                                 '.tif'), out_mc[s][i, ::].numpy())
 
-
-import glob
-
-root = os.path.join(root_data, args.destination)
-
-os.makedirs(os.path.join(root, 'diff_sig'), exist_ok=True)
-m = [tiff.imread(x)for x in sorted(glob.glob(os.path.join(root, 'mean_combinedA/*')))]
-v = [tiff.imread(x) for x in sorted(glob.glob(os.path.join(root, 'var_combinedA/*')))]
-
-m0 = [tiff.imread(x.replace(x.split('_')[-1], '0.0.tif')) for x in sorted(glob.glob(os.path.join(root, 'mean_combinedA/*')))]
-v0 = [tiff.imread(x.replace(x.split('_')[-1], '0.0.tif')) for x in sorted(glob.glob(os.path.join(root, 'var_combinedA/*')))]
-
-significant_new = []
-for i in range(len(m)):
-    significant_new.append((m0[i] - m[i]) / np.sqrt(v[i] + v0[i]))
-    tiff.imsave(os.path.join(root, 'diff_sig', str(i).zfill(3) + '.tif'), significant_new[-1])
 
 
 
@@ -346,4 +305,3 @@ for i in range(len(m)):
 
 # CUDA_VISIBLE_DEVICES=0 python -m test.test_oaiinj.py --jsn womac3 --direction a_b --testset womac4/full/ --item mean sig --prj 3D/test4mcVgg10/ --all 0 1
 # 00 1 --mc 100 --sfx A --dest out0324 --nepochs 100 101 1
-
