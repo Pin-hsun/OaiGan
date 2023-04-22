@@ -197,6 +197,8 @@ class PairedData(data.Dataset):
             x[x >= self.opt.trd] = self.opt.trd
 
         if not self.opt.nm == '00':
+            x = x - x.min()  # this is added for the neurons images, where min != 0
+
             if x.max() > 0:  # scale to 0-1
                 x = x / x.max()
 
@@ -304,6 +306,7 @@ class PairedDataTif(data.Dataset):
             if trd > 0:
                 tif[tif >= trd] = trd
 
+            tif = tif - tif.min()  # this is added for the neurons images, where min != 0
             if tif.max() > 0:  # scale to 0-1
                 tif = tif / tif.max()
 

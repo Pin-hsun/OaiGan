@@ -347,3 +347,4 @@ for i in range(len(m)):
 # CUDA_VISIBLE_DEVICES=0 python -m test.test_oaiinj.py --jsn womac3 --direction a_b --testset womac4/full/ --item mean sig --prj 3D/test4mcVgg10/ --all 0 1
 # 00 1 --mc 100 --sfx A --dest out0324 --nepochs 100 101 1
 
+ # CUDA_VISIBLE_DEVICES=0 python -m test.test_oaiinj.py --jsn womac3 --direction a_b --testset womac4/full/ --item combined mean_diff var_diff sig_diff mean_combined var_combined sig_combined --prj 3D/test4mcVgg10/ --all 1223 2698 6909 9351 9528 5591 925 --mc 100 --sfx A  --nepochs 100 101 1 --engine descar4ab --nalpha 0 101 2

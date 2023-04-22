@@ -55,10 +55,9 @@ class GAN(BaseModel):
         imgXY = nn.Sigmoid()(imgXY['out0'])  # mask
 
         imgXX = net_g(oriX, a=0 * torch.FloatTensor([a]))
-        #imgXX = nn.Sigmoid()(imgXX['out0'])  # mask
+        #imgXX = nn.Sigmoid()(imgXX['out1'])  # mask
 
         combinedXY = combine(imgXY, oriX, method='mul')
-
         imgXX = imgXX['out1']
         combinedXX = imgXX#combine(imgXX, oriX, method='mul')
 
@@ -87,9 +86,9 @@ class GAN(BaseModel):
         self.imgXY = combine(self.imgXY, self.oriX, method='mul')
 
         outXX = self.net_g(self.oriX, a=0 * torch.abs(self.labels['paindiff']))
-        #self.imgXX = nn.Sigmoid()(outXX['out0'])  # mask
-        #self.imgXX = combine(self.imgXX, self.oriX, method='mul')
-        self.imgXX = outXX['out1']
+        self.imgXX = nn.Sigmoid()(outXX['out1'])  # mask
+        self.imgXX = combine(self.imgXX, self.oriX, method='mul')
+        #self.imgXX = outXX['out1']
 
     def backward_g(self):
         # ADV(XY)+
