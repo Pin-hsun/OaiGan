@@ -131,7 +131,6 @@ class PairedData(data.Dataset):
         self.mode = mode
         self.filenames = filenames
         self.index = index
-
         self.all_path = list(os.path.join(root, x) for x in path.split('_'))
 
         # get name of images from the first folder
@@ -191,9 +190,10 @@ class PairedData(data.Dataset):
             x = Image.open(path)
         except:
             x = tiff.imread(path)
+
         x = np.array(x).astype(np.float32)
 
-        if self.opt.trd > 0:
+        if self.opt.trd is not None:
             x[x >= self.opt.trd] = self.opt.trd
 
         if not self.opt.nm == '00':
@@ -294,7 +294,7 @@ class PairedDataTif(data.Dataset):
         self.directions = directions.split('_')
 
         self.tif = []
-        for d in self.directions:
+        for i, d in enumerate(self.directions):
             print('loading...')
             if crop is not None:
                 tif = tiff.imread(os.path.join(root, d + '.tif'))[crop[0]:crop[1], crop[2]:crop[3], crop[4]:crop[5]]
@@ -303,8 +303,8 @@ class PairedDataTif(data.Dataset):
             print('done...')
             tif = tif.astype(np.float32)
 
-            if trd > 0:
-                tif[tif >= trd] = trd
+            if trd is not None:
+                tif[tif >= trd[i]] = trd[i]
 
             tif = tif - tif.min()  # this is added for the neurons images, where min != 0
             if tif.max() > 0:  # scale to 0-1
@@ -360,12 +360,14 @@ if __name__ == '__main__':
         dataset = MultiData(root=root, path='areg_b_aregseg_bseg', opt=opt, mode='train', filenames=False)
         xm = dataset3d.__getitem__(100)
 
-    if 0:
+    if 1:
         # fly3d
-        root = '/media/ExtHDD01/Dataset/paired_images/Fly0B/train/' # change to your data root
+
+        root = '/home/ghc/Dataset/paired_images/Fly0B/full/' # change to your data root
         opt.n01 = False
         opt.load3d = True
-        dataset = MultiData(root=root, path='xyweak_xysb',
+        opt.nm = '01'
+        dataset = MultiData(root=root, path='zyft0x3b%xyft0',
                             opt=opt, mode='train', filenames=True)
 
         xm = dataset.__getitem__(5)
@@ -377,7 +379,7 @@ if __name__ == '__main__':
                                 crop=[0, 1890, 1024+512, 1024+512+32, 0, 1024])
         x = datatif.__getitem__(0)
 
-    if 1:
+    if 0:
         root = os.environ.get('DATASET') + opt.dataset
         opt.cropsize = 256
         opt.n01 = True

@@ -62,7 +62,7 @@
             "n01": true,
             "t2d": true,
             "gray": true,
-            "trd": 0,
+            "trd": 800,
             "cmb": "not",
             "nepochs": [120, 121, 1],
             "nalpha": [100, 100, 1],

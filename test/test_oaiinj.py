@@ -190,7 +190,6 @@ parser.add_argument('--fix', action='store_true', dest='fix', default=False)
 parser.add_argument('--cmb', action='store_true', dest='cmb', default=False)
 
 
-
 with open('env/jsn/' + parser.parse_args().jsn + '.json', 'rt') as f:
     t_args = argparse.Namespace()
     t_args.__dict__.update(json.load(f)['test'])
@@ -309,13 +308,13 @@ for epoch in range(*args.nepochs):
                 to_print(to_show, save_name=os.path.join("outputs/results", args.dataset, args.prj,
                                                      str(epoch) + '_' + str(alpha) + '_' + str(ii).zfill(4) + 'm'))
 
-            if 1:
+            if 1:   # print all the mc combined
                 item = 'mc'
                 os.makedirs(os.path.join(root_data, args.destination, item + args.suffix), exist_ok=True)
-                for s in range(len(mc_diff)):
-                    for i in range(mc_diff[s].shape[0]):
+                for s in range(len(mc_combined)):
+                    for i in range(mc_combined[s].shape[0]):
                         tiff.imwrite(os.path.join(root_data, args.destination, item + args.suffix, str(i).zfill(3) +
-                                                 '.tif'), mc_diff[s][i, ::].numpy())
+                                                 '.tif'), mc_combined[s][i, ::].numpy())
 
 
 import glob

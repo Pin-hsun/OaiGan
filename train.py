@@ -2,7 +2,7 @@ from __future__ import print_function
 import argparse
 import torch.nn as nn
 from torch.utils.data import DataLoader
-import os, shutil, time
+import os, shutil, time, sys
 from tqdm import tqdm
 from dotenv import load_dotenv
 
@@ -99,6 +99,7 @@ else:
     load_dotenv('env/.t09')
 
 # Finalize Arguments and create files for logging
+args.bash = ' '.join(sys.argv)
 args = prepare_log(args)
 
 print(args)
@@ -111,6 +112,7 @@ folder, train_index, test_index = customize_data_split(args=args)
 train_set = Dataset(root=os.environ.get('DATASET') + args.dataset + folder,
                     path=args.direction,
                     opt=args, mode='train', index=train_index, filenames=True)
+print(len(train_index))
 train_loader = DataLoader(dataset=train_set, num_workers=args.threads, batch_size=args.batch_size, shuffle=True, pin_memory=True)
 
 if test_index is not None:

@@ -3,8 +3,6 @@ import numpy as np
 from PIL import Image
 from skimage import data, io
 import matplotlib.pyplot as plt
-import pandas
-import seaborn as sns
 
 def to_8bit(x):
     if type(x) == torch.Tensor:

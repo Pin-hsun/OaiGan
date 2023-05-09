@@ -7,7 +7,8 @@ def customize_data_split(args):
     split = args.split
     if split is not None:
         folder = '/full/'
-        length_data = len(sorted(glob.glob(os.path.join(os.environ.get('DATASET') + args.dataset + folder, args.direction.split('_')[0], '*'))))
+        first_folder = args.direction.split('%')[0].split('_')[0]
+        length_data = len(sorted(glob.glob(os.path.join(os.environ.get('DATASET') + args.dataset + folder, first_folder, '*'))))
         #print(os.path.join(os.environ.get('DATASET') + args.dataset + folder, args.direction[0], '*'))
 
         if split in ['x', 'y', 'small', 'all']:

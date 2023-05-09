@@ -40,16 +40,16 @@ class GAN(BaseModel):
         self.oriX = img[0]
         self.oriY = img[1]
 
-        self.imgXY = self.net_gXY(self.oriX)[0]
-        self.imgYX = self.net_gYX(self.oriY)[0]
+        self.imgXY = self.net_gXY(self.oriX)['out0']
+        self.imgYX = self.net_gYX(self.oriY)['out0']
 
         if self.hparams.lamb > 0:
-            self.imgXYX = self.net_gYX(self.imgXY)[0]
-            self.imgYXY = self.net_gXY(self.imgYX)[0]
+            self.imgXYX = self.net_gYX(self.imgXY)['out0']
+            self.imgYXY = self.net_gXY(self.imgYX)['out0']
 
         if self.hparams.lambI > 0:
-            self.idt_X = self.net_gYX(self.oriX)[0]
-            self.idt_Y = self.net_gXY(self.oriY)[0]
+            self.idt_X = self.net_gYX(self.oriX)['out0']
+            self.idt_Y = self.net_gXY(self.oriY)['out0']
 
     def backward_g(self):
         loss_g = 0
