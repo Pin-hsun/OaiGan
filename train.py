@@ -1,16 +1,19 @@
 from __future__ import print_function
 import argparse
+import glob
+
 import torch.nn as nn
 from torch.utils.data import DataLoader
 import os, shutil, time, sys
 from tqdm import tqdm
 from dotenv import load_dotenv
+from sklearn.model_selection import train_test_split
 
 from utils.make_config import load_json, save_json
 import json
 import pytorch_lightning as pl
 from pytorch_lightning import loggers as pl_loggers
-from dataloader.data_multi import MultiData as Dataset
+from dataloader.data_3D import MultiData as Dataset
 
 
 def prepare_log(args):
@@ -105,20 +108,20 @@ args = prepare_log(args)
 print(args)
 
 # Load Dataset and DataLoader
-from env.custom_data_utils import customize_data_split
+folder = 'SAG_IW_TSE'
+all_img_files = len(glob.glob(os.environ.get('DATASET') + args.dataset + folder + '/*'))
+train_index, test_index = train_test_split(range(all_img_files), test_size=0.3, random_state=42)
+# train_index, test_index = train_index[:7], test_index [:3]
+print('train set:', len(train_index))
+paired = '%' in args.direction
 
-folder, train_index, test_index = customize_data_split(args=args)
-
-train_set = Dataset(root=os.environ.get('DATASET') + args.dataset + folder,
-                    path=args.direction,
-                    opt=args, mode='train', index=train_index, filenames=True)
-print(len(train_index))
+train_set = Dataset(root=os.environ.get('DATASET') + args.dataset, path=args.direction,
+                    opt=args, mode='train', index=train_index, filenames=False, paired=paired)
 train_loader = DataLoader(dataset=train_set, num_workers=args.threads, batch_size=args.batch_size, shuffle=True, pin_memory=True)
 
 if test_index is not None:
-    test_set = Dataset(root=os.environ.get('DATASET') + args.dataset + folder,
-                       path=args.direction,
-                       opt=args, mode='test', index=test_index, filenames=True)
+    test_set = Dataset(root=os.environ.get('DATASET') + args.dataset,
+                       path=args.direction, opt=args, mode='test', index=test_index, filenames=False, paired=paired)
     test_loader = DataLoader(dataset=test_set, num_workers=args.threads, batch_size=args.batch_size, shuffle=False, pin_memory=True)
 else:
     test_loader = None
@@ -128,7 +131,7 @@ else:
 if args.preload:
     tini = time.time()
     print('Preloading...')
-    for i, x in enumerate(tqdm(train_loader)):
+    for i, x in enumerate((train_loader)):
         pass
     if test_loader is not None:
         for i, x in enumerate(tqdm(test_loader)):
@@ -137,16 +140,7 @@ if args.preload:
 
 
 # Logger
-if 0:
-    from pytorch_lightning.loggers.neptune import NeptuneLogger
-    logger = NeptuneLogger(
-        api_key="eyJhcGlfYWRkcmVzcyI6Imh0dHBzOi8vYXBwLm5lcHR1bmUuYWkiLCJhcGlfdXJsIjoiaHR0cHM6Ly9hcHAubmVwdHVuZS5haSIsImFwaV9rZXkiOiIyNmQ4NzVkMi00YWZkLTQ4MTctOGE5ZC02N2U4ZGU1YWVkZjYifQ==",
-        project="OaiGanRel")
-        #api_key="ANONYMOUS",
-        #project="test_neptune")
-else:
-    logger = pl_loggers.TensorBoardLogger(os.environ.get('LOGS') + args.dataset + '/', name=args.prj)
-
+logger = pl_loggers.TensorBoardLogger(os.environ.get('LOGS') + args.dataset + '/', name=args.prj)
 
 # Trainer
 checkpoints = os.path.join(os.environ.get('LOGS'), args.dataset, args.prj, 'checkpoints')
@@ -160,6 +154,7 @@ trainer = pl.Trainer(gpus=-1, strategy='ddp',
 print(args)
 trainer.fit(net, train_loader, test_loader)  # test loader not used during training
 
+# CUDA_VISIBLE_DEVICES=0,1,3 python train.py --jsn womac4min0 -b 1 --prj test --models cyc --netG descargan --preload
 
 # Examples of  Usage XXXYYYZZ
 # CUDA_VISIBLE_DEVICES=0,1,2,3 python train.py --jsn womac3 --prj 3D/descar3/GdsmcDbpatch16  --models descar3 --netG dsmc --netD bpatch_16 --direction ap_bp --final none -b 1 --split moaks --final none --n_epochs 400

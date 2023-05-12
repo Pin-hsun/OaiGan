@@ -35,21 +35,34 @@ class GAN(BaseModel):
         return output[0]
 
     def generation(self, batch):
-        img = batch['img']
+        # img = batch['img']
+        # self.oriX = img[0]
+        # self.oriY = img[1]
+        img = batch
+        # make img(B,1,256,256)
+        self.oriX = torch.cat(img[0], 0)[:, :1, :, :]
+        self.oriY = torch.cat(img[1], 0)[:, :1, :, :]
+        tmp_XY_list = []
+        tmp_YX_list = []
+        for mini_batch in range(4):
+            self.tmpX = self.oriX[mini_batch * int(self.oriX.shape[0]/4):(mini_batch + 1) * int(self.oriX.shape[0]/4), ::]
+            self.tmpY = self.oriY[mini_batch * int(self.oriX.shape[0]/4):(mini_batch + 1) * int(self.oriX.shape[0]/4), ::]
 
-        self.oriX = img[0]
-        self.oriY = img[1]
+            self.imgXY = self.net_gXY(self.tmpX)[0]
+            self.imgYX = self.net_gYX(self.tmpY)[0]
 
-        self.imgXY = self.net_gXY(self.oriX)['out0']
-        self.imgYX = self.net_gYX(self.oriY)['out0']
+            tmp_XY_list.append(self.imgXY)
+            tmp_YX_list.append(self.imgYX)
+        self.imgXY = torch.cat(tmp_XY_list, 0)
+        self.imgYX = torch.cat(tmp_YX_list, 0)
 
         if self.hparams.lamb > 0:
-            self.imgXYX = self.net_gYX(self.imgXY)['out0']
-            self.imgYXY = self.net_gXY(self.imgYX)['out0']
+            self.imgXYX = self.net_gYX(self.imgXY)[0]
+            self.imgYXY = self.net_gXY(self.imgYX)[0]
 
         if self.hparams.lambI > 0:
-            self.idt_X = self.net_gYX(self.oriX)['out0']
-            self.idt_Y = self.net_gXY(self.oriY)['out0']
+            self.idt_X = self.net_gYX(self.oriX)[0]
+            self.idt_Y = self.net_gXY(self.oriY)[0]
 
     def backward_g(self):
         loss_g = 0

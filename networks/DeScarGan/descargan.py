@@ -152,6 +152,7 @@ class Generator(nn.Module):
         x3 = self.down3(x2)
 
         xu3 = self.up3(x3)
+
         cat3 = torch.cat([xu3, x2], 1)
         x5 = self.conv5(cat3)
         xu2 = self.up2(x5)
